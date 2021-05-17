@@ -1,0 +1,216 @@
+
+------Laboratorio previo sesion 10: Instrucciones SIMD----------------
+1.)Estas operaciones hacen parte de las MMX adition and subtraction instructions.
+
+
+--> psubb: Esta instrucción resta el byte empaquetado en el registro / 		memoria MMX de byte empaquetado en el registro MMX.
+	Operation: Subtraction
+	data size: Byte
+	Signed
+	Saturation: Wrap
+	
+
+--> pcmpgtb: compare packed signed byte integers in mm and mm/m64 for 	greater than.
+
+The PCMPGTB instruction compares the corresponding signed byte 	integers in the destination and source operands; the PCMPGTW 	instruction compares the corresponding signed word integers in 	the destination and source operands; and the PCMPGTD 		  instruction compares the corresponding signed doubleword integers in the destination and source operands.
+
+--> movdqa: movdqa mueve un double quadword alineado.
+
+Moves a double quadword from the source operand (second operand) to the destination operand (first operand). This instruction can be used to move a double quadword to and from an XMM register and a 128-bit memory location, or between two XMM registers. When the source or destination operand is a memory operand, the operand must be aligned on a 16-byte boundary or a general-protection exception (#GP) will be generated.
+
+
+--> movdgu: mueve un double quadword no alineado.
+
+Moves a double quadword from the source operand (second operand) to the destination operand (first operand). This instruction can be used to load an XMM register from a 128-bit memory location, to store the contents of an XMM register into a 128-bit memory location, or to move data between two XMM registers. When the source or destination operand is a memory operand, the operand may be unaligned on a 16-byte boundary without causing a general-protection exception (#GP) to be generated.
+
+
+--> EMMS: vacía el estado de MMX.
+
+Empty MMX Technology State: The EMMS instruction must be used to clear the MMX technology state at the end of all MMX technology procedures or subroutines and before calling other procedures or subroutines that may execute x87 floating-point instructions. If a floating-point instruction loads one of the registers in the x87 FPU data register stack before the x87 FPU tag word has been reset by the EMMS instruction, an x87 floating-point register stack overflow can occur that will result in an x87 floating-point exception or incorrect result.
+
+EMMS operation is the same in non-64-bit modes and 64-bit mode.
+
+
+2) attribute__ nos permite especificar atributos especiales al hacer una declaración.
+
+Uno de ellos es aligned, que especifica a cuantos bytes debe estar alineada la variable.
+
+__attribute__:  
+
+The keyword __attribute__ allows you to specify special properties of variables, function parameters, or structure, union, and, in C++, class members. ... Some attributes are currently defined generically for variables. Other attributes are defined for variables on particular target systems.
+
+Los atributos son las caracterísiticas individuales que diferencian un objeto de otro y determinan su apariencia, estado u otras cualidades. Los atributos se guardan en variables denominadas de instancia, y cada objeto particular puede tener valores distintos para estas variables.
+
+aligened : The aligned variable attribute specifies a minimum alignment for the variable or structure field, measured in bytes.
+El atributo align aplicado a objetos, imágenes, tablas, marcos, etc., hace que el objeto flote hasta el margen izquierdo o derecho. Los objetos flotantes en general comienzan una nueva línea. Este atributo acepta los siguiente valores: left: Hace flotar al objeto hasta el margen izquierdo actual.
+
+3) Traducir a ensamblador
+Codigo en c:
+
+void procesar(unsigned char *mata, unsigned char *matb, int n) {
+	int i, j;
+	for (i=0; i<n; i++) {
+		for (j=0; j<n; j++) {
+			matb[i*n+j]=(mata[i*n+j]*16);
+		}
+	}
+}
+
+
+
+Bloque de activación
+---------------------  --> -8
+	j
+---------------------  --> -4
+	i
+---------------------
+	%ebp
+---------------------	--> 4
+	@ret
+---------------------  --> 8
+	*mata
+---------------------  --> 12
+	*matb
+---------------------  --> 16
+	*matc
+---------------------  --> 20
+	n
+
+
+--------------------------------Assembler---------------------------
+procesar:ensamblador una versión SIMD de la rutina que hay en Procesar.c.
+
+	pushl 	%ebp			# Abro la pila
+	movl 	%esp, %ebp
+	subl	$16, %esp
+
+	pushl	%ebx			#Salvo espacios del llamador
+	pusl	%esi
+	pusl	%edi
+
+	movl	8(%ebp), %eax		# *mata
+	movl	12(%ebp), %ebx		# *matb
+	movl	16(%ebp), %ecx		# *matc
+	movl	20(%ebp), %esi		# n
+
+	imul %esi, %esi		# n*n
+	addl %ecx, %esi		# matc[n*n] --> %esi
+	
+for:	
+		
+	cmpl %ecx, %esi		# matc[n*n]-matc[0]
+	jle endFor			# Si matc[n*n]<=matc[0] salta
+	
+	movb (%eax),%edx		# matc=mata-matb
+	subb (%ebx),%edx
+if:	
+	cmpb $0,%edx			#matc[n*n]>0
+	jle elseif
+	movb $255,(%ecx)		#matc[n*n]=255
+	
+elseif: cmpl $0,%edx			#matc[n*n]=0
+	jne endElseIf
+	movl $0,(%ecx)
+	
+endElseIf:	
+	
+	incl %eax			#Incremento en Mata[]
+	incl %ebx			#Incremento en Matb[]
+	incl %ecx			#Incremento en Matc[]
+	
+	jump for			#Retorno a for
+		
+endFor:
+
+	popl %edi			#Recogo registros
+	popl %esi
+	popl %ebx
+	movl %ebp,esp			#Cierro la pila
+	popl %ebp
+
+-----------------------------------------------------------------
+4)
+R// Para procesar un valor inmediato en un registro xmm se utiliza  la instrucción:
+--> movdqu xmm1 
+o 
+-->movdqu xmm2/m128 #para mover un double quadword alineado de xmm2(que se encuentra en una posición de 128 bits de memoria) a xmm1.
+---------------------------------------------------------------
+5) ensamblador una versión SIMD de la rutina que hay en Procesar.c.
+
+
+--------------------------------Assembler-con SMD-------------------
+.text
+	.align 4
+	.globl procesar
+	.type	procesar, @function
+	comparer:
+	.byte 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+
+procesar:
+	pushl 	%ebp			# Abro la pila
+	movl 	%esp, %ebp
+	subl	$16, %esp
+
+	pushl	%ebx			#Salvo espacios del llamador
+	pusl	%esi
+	pusl	%edi
+
+	movl	8(%ebp), %eax		# *mata
+	movl	12(%ebp), %ebx		# *matb
+	movl	16(%ebp), %ecx		# *matc
+	movl	20(%ebp), %esi		# n
+
+	imul %esi, %esi		# n*n
+	addl %ecx, %esi		# matc[n*n] --> %esi
+	
+for:	
+		
+	cmpl %ecx, %esi		# matc[n*n]-matc[0]
+	jle endFor			# Si matc[n*n]<=matc[0] salta
+	
+	movdqa (%eax), %xmm0
+	movdqa (%ebx), %xmm1
+	
+	psubb %xmm0,%xmm1		#Restar doublequads
+	
+	movdqa comparer, %xmm2
+	
+	pcmpgtb %xmm1, %xmm2
+	movdqa %xmm1, (%ecx)		#Guarda xmm1 empaq en matc[]
+	
+	addl $16, %eax			#Suma mata[+16]
+	addl $16, %ebx			#Suma matb[+16]
+	addl $16, %ecx			#Suma matc[+16]
+	
+	jmp for
+	
+endFor	
+	
+
+# El final de la rutina ya esta programado
+
+	emms	# Instruccion necesaria si os equivocais y usais MMX
+	popl	%edi
+	popl	%esi
+	popl	%ebx
+	movl %ebp,%esp
+	popl %ebp
+	ret	
+
+
+
+6)Codigo en ensamblador que a partir de un valor almacenado en un registro averigue si es multiplo de 16.
+
+	andl 0x000000F, %eax
+	jne no_mult
+	
+mult:
+
+	#Codigo
+	jmp fi:
+no_mult:
+	#Codigo
+	
+fi:			
+
+
